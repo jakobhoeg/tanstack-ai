@@ -239,10 +239,16 @@ export interface ImageGenerationResult {
   };
 }
 
-export interface AIAdapter<TModels extends readonly string[] = readonly string[], TImageModels extends readonly string[] = readonly string[]> {
+export interface AIAdapter<
+  TModels extends readonly string[] = readonly string[],
+  TImageModels extends readonly string[] = readonly string[],
+  TProviderOptions extends Record<string, any> = Record<string, any>
+> {
   name: string;
   models: TModels;
   imageModels?: TImageModels;
+  // Type-only property for provider options inference
+  _providerOptions?: TProviderOptions;
 
   // Chat methods
   chatCompletion(options: ChatCompletionOptions): Promise<ChatCompletionResult>;

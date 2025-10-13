@@ -10,40 +10,40 @@ Each AI provider (OpenAI, Anthropic, Gemini, etc.) has unique features and confi
 
 ✅ **Type-Safe**: TypeScript provides autocomplete and type checking based on the selected adapter  
 ✅ **Provider-Specific**: Each adapter defines its own option types  
+✅ **No Global Types**: Uses TypeScript's type inference without module augmentation  
 ✅ **Flexible**: Works with chat, text generation, and image generation  
 ✅ **Well-Documented**: Based on official AI SDK documentation
 
 ## How It Works
 
-### 1. Provider Options Interface
+### 1. Adapter Type Parameters
 
-Each adapter package declares its provider options by augmenting the `ProviderOptionsMap` interface:
+Each adapter class extends `BaseAdapter` with three type parameters:
 
 ```typescript
-// In @tanstack/ai-openai
-declare module "@tanstack/ai" {
-  interface ProviderOptionsMap {
-    openai: OpenAIProviderOptions;
-  }
-}
-
-// In @tanstack/ai-anthropic
-declare module "@tanstack/ai" {
-  interface ProviderOptionsMap {
-    anthropic: AnthropicProviderOptions;
-  }
+export class OpenAIAdapter extends BaseAdapter<
+  typeof OPENAI_MODELS,           // Available text models
+  typeof OPENAI_IMAGE_MODELS,     // Available image models
+  OpenAIProviderOptions           // Provider-specific options type
+> {
+  name = "openai" as const;
+  // ...
 }
 ```
 
 ### 2. Type Inference
 
-The AI class uses conditional types to infer the correct `providerOptions` type based on the selected adapter:
+The AI class automatically extracts the provider options type from each adapter and makes it available based on the adapter's internal `name`:
 
 ```typescript
-type GetProviderOptions<TAdapterName extends string> = 
-  TAdapterName extends keyof ProviderOptionsMap 
-    ? { [K in TAdapterName]?: ProviderOptionsMap[K] }
-    : { [K in TAdapterName]?: Record<string, any> };
+// The AI class extracts:
+// - Adapter's internal name: "openai"
+// - Provider options type: OpenAIProviderOptions
+
+// Then creates a type like:
+type ProviderOptions = {
+  openai?: OpenAIProviderOptions;
+}
 ```
 
 ### 3. Usage
@@ -353,7 +353,7 @@ await ai.chat({
 
 ## Adding Provider Options to Custom Adapters
 
-If you create a custom adapter, you can add provider-specific options:
+If you create a custom adapter, you can add provider-specific options by passing them as the third type parameter to `BaseAdapter`:
 
 1. Define your options interface:
 
@@ -364,23 +364,38 @@ export interface MyCustomProviderOptions {
 }
 ```
 
-2. Augment the `ProviderOptionsMap`:
+2. Pass it to BaseAdapter as the third type parameter:
 
 ```typescript
-declare module "@tanstack/ai" {
-  interface ProviderOptionsMap {
-    mycustom: MyCustomProviderOptions; // Use your adapter's internal name
-  }
+import { BaseAdapter } from "@tanstack/ai";
+
+const MY_CUSTOM_MODELS = ["custom-model-1", "custom-model-2"] as const;
+
+export class MyCustomAdapter extends BaseAdapter<
+  typeof MY_CUSTOM_MODELS,      // Models type
+  readonly [],                   // Image models type (empty if not supported)
+  MyCustomProviderOptions        // Provider options type
+> {
+  name = "mycustom" as const;    // Internal name (used in providerOptions key)
+  models = MY_CUSTOM_MODELS;
+  
+  // ... implementation
 }
 ```
 
-3. Extract and use options in your adapter:
+3. Extract and use options in your adapter methods:
 
 ```typescript
-export class MyCustomAdapter extends BaseAdapter {
-  name = "mycustom"; // Must match the ProviderOptionsMap key
+export class MyCustomAdapter extends BaseAdapter<
+  typeof MY_CUSTOM_MODELS,
+  readonly [],
+  MyCustomProviderOptions
+> {
+  name = "mycustom" as const;
+  models = MY_CUSTOM_MODELS;
 
   async chatCompletion(options: ChatCompletionOptions): Promise<ChatCompletionResult> {
+    // TypeScript knows this is MyCustomProviderOptions based on the adapter instance
     const providerOpts = options.providerOptions?.mycustom as MyCustomProviderOptions | undefined;
 
     // Use providerOpts to configure your API calls
@@ -392,6 +407,30 @@ export class MyCustomAdapter extends BaseAdapter {
   }
 }
 ```
+
+4. Type safety works automatically:
+
+```typescript
+const ai = new AI({
+  adapters: {
+    custom: new MyCustomAdapter({ /* config */ }),
+  },
+});
+
+await ai.chat({
+  adapter: "custom",
+  model: "custom-model-1",
+  messages: [...],
+  providerOptions: {
+    mycustom: {          // ✅ TypeScript infers MyCustomProviderOptions here
+      customOption1: "value",
+      customOption2: 42,
+    },
+  },
+});
+```
+
+No global module augmentation needed! TypeScript extracts the provider options type directly from your adapter instance.
 
 ## References
 

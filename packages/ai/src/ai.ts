@@ -14,23 +14,24 @@ import type {
   Tool,
 } from "./types";
 
-type AdapterMap = Record<string, AIAdapter<readonly string[], readonly string[]>>;
+type AdapterMap = Record<string, AIAdapter<readonly string[], readonly string[], any>>;
 
 // Extract model type from an adapter
-type ExtractModels<T> = T extends AIAdapter<infer M, any> ? M[number] : string;
+type ExtractModels<T> = T extends AIAdapter<infer M, any, any> ? M[number] : string;
 
 // Extract image model type from an adapter
-type ExtractImageModels<T> = T extends AIAdapter<any, infer M> ? M[number] : string;
+type ExtractImageModels<T> = T extends AIAdapter<any, infer M, any> ? M[number] : string;
 
-// Extract provider options type from adapter name
-// This will be extended with actual adapter-specific types via module augmentation
-export interface ProviderOptionsMap { }
+// Extract provider options type from an adapter
+type ExtractProviderOptions<T> = T extends AIAdapter<any, any, infer P> ? P : Record<string, any>;
 
-// Helper to get provider options for a specific adapter
-type GetProviderOptions<TAdapterName extends string> =
-  TAdapterName extends keyof ProviderOptionsMap
-  ? { [K in TAdapterName]?: ProviderOptionsMap[K] }
-  : { [K in TAdapterName]?: Record<string, any> };
+// Helper to get provider options for a specific adapter based on its internal name
+type GetProviderOptionsForAdapter<TAdapter extends AIAdapter<any, any, any>> =
+  TAdapter extends { name: infer TName }
+  ? TName extends string
+  ? { [K in TName]?: ExtractProviderOptions<TAdapter> }
+  : never
+  : never;
 
 // Type for a single fallback configuration (discriminated union)
 type AdapterFallback<TAdapters extends AdapterMap> = {
@@ -42,7 +43,7 @@ type AdapterFallback<TAdapters extends AdapterMap> = {
 
 // Type for a single image fallback configuration
 type ImageAdapterFallback<TAdapters extends AdapterMap> = {
-  [K in keyof TAdapters & string]: TAdapters[K] extends AIAdapter<any, infer ImageModels>
+  [K in keyof TAdapters & string]: TAdapters[K] extends AIAdapter<any, infer ImageModels, any>
   ? ImageModels extends readonly string[]
   ? ImageModels['length'] extends 0
   ? never
@@ -111,7 +112,7 @@ type ChatOptionsWithAdapter<TAdapters extends AdapterMap, TTools extends ToolReg
      * Provider-specific options. Type-safe based on the selected adapter.
      * For example: { openai: { reasoningSummary: 'detailed' } }
      */
-    providerOptions?: GetProviderOptions<K>;
+    providerOptions?: GetProviderOptionsForAdapter<TAdapters[K]>;
   };
 }[keyof TAdapters & string];
 
@@ -155,7 +156,7 @@ type TextGenerationOptionsWithAdapter<TAdapters extends AdapterMap> = {
     /**
      * Provider-specific options. Type-safe based on the selected adapter.
      */
-    providerOptions?: GetProviderOptions<K>;
+    providerOptions?: GetProviderOptionsForAdapter<TAdapters[K]>;
   };
 }[keyof TAdapters & string];
 
@@ -212,7 +213,7 @@ type EmbeddingOptionsWithFallback<TAdapters extends AdapterMap> = Omit<
 };
 
 type ImageGenerationOptionsWithAdapter<TAdapters extends AdapterMap> = {
-  [K in keyof TAdapters & string]: TAdapters[K] extends AIAdapter<any, infer ImageModels>
+  [K in keyof TAdapters & string]: TAdapters[K] extends AIAdapter<any, infer ImageModels, any>
   ? ImageModels extends readonly string[]
   ? ImageModels['length'] extends 0
   ? never
@@ -226,7 +227,7 @@ type ImageGenerationOptionsWithAdapter<TAdapters extends AdapterMap> = {
     /**
      * Provider-specific options. Type-safe based on the selected adapter.
      */
-    providerOptions?: GetProviderOptions<K>;
+    providerOptions?: GetProviderOptionsForAdapter<TAdapters[K]>;
   }
   : never
   : never;

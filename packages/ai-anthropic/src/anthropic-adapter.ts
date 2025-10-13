@@ -15,13 +15,6 @@ import {
   type StreamChunk,
 } from "@tanstack/ai";
 
-// Augment the ProviderOptionsMap to add Anthropic-specific options
-declare module "@tanstack/ai" {
-  interface ProviderOptionsMap {
-    anthropic: AnthropicProviderOptions;
-  }
-}
-
 export interface AnthropicAdapterConfig extends AIAdapterConfig {
   apiKey: string;
 }
@@ -63,9 +56,10 @@ export interface AnthropicProviderOptions {
 
 export class AnthropicAdapter extends BaseAdapter<
   typeof ANTHROPIC_MODELS,
-  typeof ANTHROPIC_IMAGE_MODELS
+  typeof ANTHROPIC_IMAGE_MODELS,
+  AnthropicProviderOptions
 > {
-  name = "anthropic";
+  name = "anthropic" as const;
   models = ANTHROPIC_MODELS;
   imageModels = ANTHROPIC_IMAGE_MODELS;
   private client: Anthropic;

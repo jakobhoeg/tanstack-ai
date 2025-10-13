@@ -16,13 +16,6 @@ import {
   type ImageData,
 } from "@tanstack/ai";
 
-// Augment the ProviderOptionsMap to add OpenAI-specific options
-declare module "@tanstack/ai" {
-  interface ProviderOptionsMap {
-    openai: OpenAIProviderOptions;
-  }
-}
-
 export interface OpenAIAdapterConfig extends AIAdapterConfig {
   apiKey: string;
   organization?: string;
@@ -115,8 +108,12 @@ export interface OpenAIImageProviderOptions {
   seed?: number;
 }
 
-export class OpenAIAdapter extends BaseAdapter<typeof OPENAI_MODELS, typeof OPENAI_IMAGE_MODELS> {
-  name = "openai";
+export class OpenAIAdapter extends BaseAdapter<
+  typeof OPENAI_MODELS,
+  typeof OPENAI_IMAGE_MODELS,
+  OpenAIProviderOptions
+> {
+  name = "openai" as const;
   models = OPENAI_MODELS;
   imageModels = OPENAI_IMAGE_MODELS;
   private client: OpenAI;

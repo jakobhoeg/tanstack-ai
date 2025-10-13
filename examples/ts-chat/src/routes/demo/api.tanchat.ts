@@ -97,6 +97,7 @@ export const Route = createFileRoute("/demo/api/tanchat")({
             {
               adapter: "ollama",
               model: "gpt-oss:20b",
+
             },
           ],
           as: "response",
@@ -110,7 +111,7 @@ export const Route = createFileRoute("/demo/api/tanchat")({
           providerOptions: {
             openai: {
               // Control response verbosity
-              textVerbosity: "medium", // 'low' | 'medium' | 'high'
+              textVerbosity: "low", // 'low' | 'medium' | 'high'
 
               // Store generation for distillation
               store: true,
