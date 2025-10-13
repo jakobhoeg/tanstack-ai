@@ -44,6 +44,13 @@ type ChatOptionsWithAdapter<TAdapters extends AdapterMap> = {
      * If not provided, will use global fallbacks from constructor (if any).
      */
     fallbacks?: ReadonlyArray<AdapterFallback<TAdapters>>;
+    /**
+     * Determines the return type of the chat method:
+     * - "promise": Returns a Promise<ChatCompletionResult> (default)
+     * - "stream": Returns an AsyncIterable<StreamChunk> for streaming
+     * - "response": Returns a Response object with proper headers for HTTP streaming
+     */
+    as?: "promise" | "stream" | "response";
   };
 }[keyof TAdapters & string];
 
@@ -57,6 +64,13 @@ type ChatOptionsWithFallback<TAdapters extends AdapterMap> = Omit<
    * Each fallback specifies both the adapter name and the model to use with that adapter.
    */
   fallbacks: ReadonlyArray<AdapterFallback<TAdapters>>;
+  /**
+   * Determines the return type of the chat method:
+   * - "promise": Returns a Promise<ChatCompletionResult> (default)
+   * - "stream": Returns an AsyncIterable<StreamChunk> for streaming
+   * - "response": Returns a Response object with proper headers for HTTP streaming
+   */
+  as?: "promise" | "stream" | "response";
 };
 
 type TextGenerationOptionsWithAdapter<TAdapters extends AdapterMap> = {
@@ -246,9 +260,34 @@ export class AI<T extends AdapterMap = AdapterMap> {
 
   /**
    * Complete a chat conversation
-   * Supports single adapter mode with optional fallbacks
+   * Return type is automatically inferred based on the "as" parameter:
+   * - "promise" (default): Promise<ChatCompletionResult>
+   * - "stream": AsyncIterable<StreamChunk>
+   * - "response": Response
    */
-  async chat(
+  chat<const TAs extends "promise" | "stream" | "response" = "promise">(
+    options: (ChatOptionsWithAdapter<T> | ChatOptionsWithFallback<T>) & { as?: TAs }
+  ): TAs extends "stream"
+    ? AsyncIterable<StreamChunk>
+    : TAs extends "response"
+    ? Response
+    : Promise<ChatCompletionResult> {
+    const asOption = (options.as || "promise") as "promise" | "stream" | "response";
+
+    // Route to appropriate handler based on "as" option
+    if (asOption === "stream") {
+      return this.chatStream(options) as any;
+    } else if (asOption === "response") {
+      return this.chatResponse(options) as any;
+    } else {
+      return this.chatPromise(options) as any;
+    }
+  }
+
+  /**
+   * Internal: Handle chat as a promise (default behavior)
+   */
+  private async chatPromise(
     options:
       | ChatOptionsWithAdapter<T>
       | ChatOptionsWithFallback<T>
@@ -256,7 +295,7 @@ export class AI<T extends AdapterMap = AdapterMap> {
     // Check if this is fallback-only mode (no primary adapter specified)
     if (!("adapter" in options)) {
       // Fallback-only mode
-      const { fallbacks, ...restOptions } = options;
+      const { fallbacks, as, ...restOptions } = options;
       const fallbackList = fallbacks.length > 0 ? fallbacks : this.fallbacks;
 
       if (!fallbackList || fallbackList.length === 0) {
@@ -278,7 +317,7 @@ export class AI<T extends AdapterMap = AdapterMap> {
     }
 
     // Single adapter mode (with optional fallbacks)
-    const { adapter, model, fallbacks, ...restOptions } = options;
+    const { adapter, model, fallbacks, as, ...restOptions } = options;
 
     // Get fallback list (from options or constructor)
     const fallbackList = fallbacks && fallbacks.length > 0
@@ -317,11 +356,23 @@ export class AI<T extends AdapterMap = AdapterMap> {
   }
 
   /**
-   * Stream chat with structured JSON chunks (supports tools and detailed token info)
+   * Internal: Handle chat as a Response object with streaming
+   */
+  private chatResponse(
+    options:
+      | ChatOptionsWithAdapter<T>
+      | ChatOptionsWithFallback<T>
+  ): Response {
+    const { toStreamResponse } = require("./stream-to-response");
+    return toStreamResponse(this.chatStream(options));
+  }
+
+  /**
+   * Internal: Handle chat as a stream (AsyncIterable)
    * Automatically executes tools if they have execute functions
    * Supports single adapter mode with optional fallbacks
    */
-  async *streamChat(
+  private async *chatStream(
     options:
       | ChatOptionsWithAdapter<T>
       | ChatOptionsWithFallback<T>
@@ -336,7 +387,7 @@ export class AI<T extends AdapterMap = AdapterMap> {
 
     if (isFallbackOnlyMode) {
       // Fallback-only mode
-      const { fallbacks, ...rest } = options;
+      const { fallbacks, as, ...rest } = options;
       fallbackList = fallbacks && fallbacks.length > 0 ? fallbacks : this.fallbacks;
 
       if (!fallbackList || fallbackList.length === 0) {
@@ -351,7 +402,7 @@ export class AI<T extends AdapterMap = AdapterMap> {
       restOptions = rest;
     } else {
       // Single adapter mode (with optional fallbacks)
-      const { adapter, model, fallbacks, ...rest } = options;
+      const { adapter, model, fallbacks, as, ...rest } = options;
       adapterToUse = adapter;
       modelToUse = model;
       restOptions = rest;

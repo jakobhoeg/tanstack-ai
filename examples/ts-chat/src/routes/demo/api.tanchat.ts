@@ -56,7 +56,7 @@ const tools: Tool[] = [
 export const Route = createFileRoute("/demo/api/tanchat")({
   server: {
     handlers: {
-      POST: async ({ request }) => {
+      POST: async ({ request }): Promise<Response> => {
         try {
           const { messages } = await request.json();
 
@@ -85,7 +85,7 @@ export const Route = createFileRoute("/demo/api/tanchat")({
               : [{ role: "system", content: SYSTEM_PROMPT }, ...messages];
 
           // streamChat automatically handles tool execution!
-          const stream = ai.streamChat({
+          return ai.chat({
             model: "gpt-4o",
             adapter: "openAi",
             fallbacks: [
@@ -95,14 +95,12 @@ export const Route = createFileRoute("/demo/api/tanchat")({
               }
 
             ],
+            as: "response",
             messages: allMessages,
             temperature: 0.7,
             toolChoice: "auto",
             maxIterations: 5,
           });
-
-          // Convert to HTTP response - that's it!
-          return toStreamResponse(stream);
         } catch (error) {
           console.error("Chat API error:", error);
           return new Response(
