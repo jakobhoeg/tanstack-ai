@@ -44,6 +44,11 @@ interface AIConfig<T extends AdapterMap, TTools extends ToolRegistry = ToolRegis
    * Tools can then be referenced by name in chat options.
    */
   tools?: TTools;
+  /**
+   * Default system prompts to prepend to all chat conversations.
+   * Can be overridden per chat call.
+   */
+  systemPrompts?: string[];
 }
 
 // Create discriminated union for adapter options with model constraint
@@ -68,6 +73,11 @@ type ChatOptionsWithAdapter<TAdapters extends AdapterMap, TTools extends ToolReg
      * Tools must be registered in the AI constructor.
      */
     tools?: ReadonlyArray<ToolNames<TTools>>;
+    /**
+     * System prompts to prepend to this chat conversation.
+     * Overrides the default system prompts from constructor if provided.
+     */
+    systemPrompts?: string[];
   };
 }[keyof TAdapters & string];
 
@@ -93,6 +103,11 @@ type ChatOptionsWithFallback<TAdapters extends AdapterMap, TTools extends ToolRe
    * Tools must be registered in the AI constructor.
    */
   tools?: ReadonlyArray<ToolNames<TTools>>;
+  /**
+   * System prompts to prepend to this chat conversation.
+   * Overrides the default system prompts from constructor if provided.
+   */
+  systemPrompts?: string[];
 };
 
 type TextGenerationOptionsWithAdapter<TAdapters extends AdapterMap> = {
@@ -162,11 +177,13 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
   private adapters: T;
   private fallbacks?: ReadonlyArray<AdapterFallback<T>>;
   private tools: TTools;
+  private systemPrompts?: string[];
 
   constructor(config: AIConfig<T, TTools>) {
     this.adapters = config.adapters;
     this.fallbacks = config.fallbacks;
     this.tools = (config.tools || {}) as TTools;
+    this.systemPrompts = config.systemPrompts;
   }
 
   /**
@@ -214,6 +231,46 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
    */
   private getToolsByNames(names: ReadonlyArray<ToolNames<TTools>>): Tool[] {
     return names.map(name => this.getTool(name));
+  }
+
+  /**
+   * Prepend system prompts to messages if provided
+   */
+  private prependSystemPrompts(
+    messages: import("./types").Message[],
+    systemPrompts?: string[]
+  ): import("./types").Message[] {
+    const promptsToUse = systemPrompts ?? this.systemPrompts;
+
+    if (!promptsToUse || promptsToUse.length === 0) {
+      return messages;
+    }
+
+    // Check if messages already start with system prompts
+    const hasSystemMessage = messages[0]?.role === "system";
+
+    // Create system messages from prompts
+    const systemMessages: import("./types").Message[] = promptsToUse.map(content => ({
+      role: "system" as const,
+      content,
+    }));
+
+    // If there are existing system messages, replace them; otherwise prepend
+    if (hasSystemMessage) {
+      // Find all leading system messages
+      let systemMessageCount = 0;
+      for (const msg of messages) {
+        if (msg.role === "system") {
+          systemMessageCount++;
+        } else {
+          break;
+        }
+      }
+      // Replace existing system messages
+      return [...systemMessages, ...messages.slice(systemMessageCount)];
+    }
+
+    return [...systemMessages, ...messages];
   }
 
   /**
@@ -346,7 +403,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
     // Check if this is fallback-only mode (no primary adapter specified)
     if (!("adapter" in options)) {
       // Fallback-only mode
-      const { fallbacks, as, tools, ...restOptions } = options;
+      const { fallbacks, as, tools, systemPrompts, ...restOptions } = options;
       const fallbackList = fallbacks.length > 0 ? fallbacks : this.fallbacks;
 
       if (!fallbackList || fallbackList.length === 0) {
@@ -358,11 +415,15 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
       // Convert tool names to tool objects
       const toolObjects = tools ? this.getToolsByNames(tools) : undefined;
 
+      // Prepend system prompts to messages
+      const messages = this.prependSystemPrompts(restOptions.messages, systemPrompts);
+
       return this.tryWithFallback(
         fallbackList,
         async (fallback) => {
           return this.getAdapter(fallback.adapter).chatCompletion({
             ...restOptions,
+            messages,
             model: fallback.model,
             tools: toolObjects,
           } as ChatCompletionOptions);
@@ -372,7 +433,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
     }
 
     // Single adapter mode (with optional fallbacks)
-    const { adapter, model, fallbacks, as, tools, ...restOptions } = options;
+    const { adapter, model, fallbacks, as, tools, systemPrompts, ...restOptions } = options;
 
     // Get fallback list (from options or constructor)
     const fallbackList = fallbacks && fallbacks.length > 0
@@ -382,10 +443,14 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
     // Convert tool names to tool objects
     const toolObjects = tools ? this.getToolsByNames(tools) : undefined;
 
+    // Prepend system prompts to messages
+    const messages = this.prependSystemPrompts(restOptions.messages, systemPrompts);
+
     // Try primary adapter first
     try {
       return await this.getAdapter(adapter).chatCompletion({
         ...restOptions,
+        messages,
         model,
         tools: toolObjects,
       } as ChatCompletionOptions);
@@ -406,6 +471,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
         async (fallback) => {
           return this.getAdapter(fallback.adapter).chatCompletion({
             ...restOptions,
+            messages,
             model: fallback.model,
             tools: toolObjects,
           } as ChatCompletionOptions);
@@ -445,12 +511,14 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
     let restOptions: any;
     let fallbackList: ReadonlyArray<AdapterFallback<T>> | undefined;
     let toolNames: ReadonlyArray<ToolNames<TTools>> | undefined;
+    let systemPrompts: string[] | undefined;
 
     if (isFallbackOnlyMode) {
       // Fallback-only mode
-      const { fallbacks, as, tools, ...rest } = options;
+      const { fallbacks, as, tools, systemPrompts: prompts, ...rest } = options;
       fallbackList = fallbacks && fallbacks.length > 0 ? fallbacks : this.fallbacks;
       toolNames = tools;
+      systemPrompts = prompts;
 
       if (!fallbackList || fallbackList.length === 0) {
         throw new Error(
@@ -464,17 +532,21 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
       restOptions = rest;
     } else {
       // Single adapter mode (with optional fallbacks)
-      const { adapter, model, fallbacks, as, tools, ...rest } = options;
+      const { adapter, model, fallbacks, as, tools, systemPrompts: prompts, ...rest } = options;
       adapterToUse = adapter;
       modelToUse = model;
       restOptions = rest;
       toolNames = tools;
+      systemPrompts = prompts;
       fallbackList = fallbacks && fallbacks.length > 0 ? fallbacks : this.fallbacks;
     }
 
     // Convert tool names to tool objects
     const toolObjects = toolNames ? this.getToolsByNames(toolNames) : undefined;
     restOptions.tools = toolObjects;
+
+    // Prepend system prompts to messages
+    restOptions.messages = this.prependSystemPrompts(restOptions.messages, systemPrompts);
 
     const hasToolExecutors = toolObjects?.some((t: any) => t.execute);
 

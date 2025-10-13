@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { AI, Tool, ToolConfig } from "@tanstack/ai";
+import { AI, ToolConfig } from "@tanstack/ai";
 import { OllamaAdapter } from "@tanstack/ai-ollama";
 import { OpenAIAdapter } from "@tanstack/ai-openai";
 
@@ -52,7 +52,7 @@ const tools = {
   },
 } as const satisfies ToolConfig;
 
-// Initialize AI with tools in constructor
+// Initialize AI with tools and system prompts in constructor
 const ai = new AI({
   adapters: {
     ollama: new OllamaAdapter({
@@ -69,48 +69,33 @@ const ai = new AI({
     },
   ],
   tools, // ← Register tools once here!
+  systemPrompts: [SYSTEM_PROMPT], // ← Default system prompt for all chats
 });
 
 export const Route = createFileRoute("/demo/api/tanchat")({
   server: {
     handlers: {
-      POST: async ({ request }): Promise<Response> => {
-        try {
-          const { messages } = await request.json();
+      POST: async ({ request }) => {
+        const { messages } = await request.json();
 
-          // Add system message if not present
-          const allMessages =
-            messages[0]?.role === "system"
-              ? messages
-              : [{ role: "system", content: SYSTEM_PROMPT }, ...messages];
-
-          // Use tools by name - type-safe!
-          return ai.chat({
-            model: "gpt-4o",
-            adapter: "openAi",
-            fallbacks: [
-              {
-                adapter: "ollama",
-                model: "gpt-oss:20b",
-              },
-            ],
-            as: "response",
-            messages: allMessages,
-            temperature: 0.7,
-            tools: ["getGuitars", "recommendGuitar"], // ← Type-safe tool names!
-            toolChoice: "auto",
-            maxIterations: 5,
-          });
-        } catch (error) {
-          console.error("Chat API error:", error);
-          return new Response(
-            JSON.stringify({ error: "Failed to process chat request" }),
+        // System prompts are automatically prepended from constructor
+        // No need to manually add system messages anymore!
+        return ai.chat({
+          model: "gpt-4o",
+          adapter: "openAi",
+          fallbacks: [
             {
-              status: 500,
-              headers: { "Content-Type": "application/json" },
-            }
-          );
-        }
+              adapter: "ollama",
+              model: "gpt-oss:20b",
+            },
+          ],
+          as: "response",
+          messages,
+          temperature: 0.7,
+          tools: ["getGuitars", "recommendGuitar"],
+          toolChoice: "auto",
+          maxIterations: 5,
+        });
       },
     },
   },
