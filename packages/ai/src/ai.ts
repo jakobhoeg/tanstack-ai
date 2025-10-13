@@ -25,19 +25,16 @@ type ExtractImageModels<T> = T extends AIAdapter<any, infer M, any> ? M[number] 
 // Extract provider options type from an adapter
 type ExtractProviderOptions<T> = T extends AIAdapter<any, any, infer P> ? P : Record<string, any>;
 
-// Helper to get provider options for a specific adapter based on its internal name
-type GetProviderOptionsForAdapter<TAdapter extends AIAdapter<any, any, any>> =
-  TAdapter extends { name: infer TName }
-  ? TName extends string
-  ? { [K in TName]?: ExtractProviderOptions<TAdapter> }
-  : never
-  : never;
-
-// Type for a single fallback configuration (discriminated union)
+// Helper to get provider options for a specific adapter (no nesting)
+type GetProviderOptionsForAdapter<TAdapter extends AIAdapter<any, any, any>> = ExtractProviderOptions<TAdapter>;// Type for a single fallback configuration (discriminated union)
 type AdapterFallback<TAdapters extends AdapterMap> = {
   [K in keyof TAdapters & string]: {
     adapter: K;
     model: ExtractModels<TAdapters[K]>;
+    /**
+     * Provider-specific options for this fallback. Type-safe based on the adapter.
+     */
+    providerOptions?: GetProviderOptionsForAdapter<TAdapters[K]>;
   };
 }[keyof TAdapters & string];
 
@@ -50,6 +47,10 @@ type ImageAdapterFallback<TAdapters extends AdapterMap> = {
   : {
     adapter: K;
     model: ExtractImageModels<TAdapters[K]>;
+    /**
+     * Provider-specific options for this fallback. Type-safe based on the adapter.
+     */
+    providerOptions?: GetProviderOptionsForAdapter<TAdapters[K]>;
   }
   : never
   : never;
@@ -496,6 +497,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
             messages,
             model: fallback.model,
             tools: toolObjects,
+            providerOptions: fallback.providerOptions,
           } as ChatCompletionOptions);
         },
         "chat"
@@ -544,6 +546,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
             messages,
             model: fallback.model,
             tools: toolObjects,
+            providerOptions: fallback.providerOptions,
           } as ChatCompletionOptions);
         },
         "chat (after primary failure)"
@@ -628,6 +631,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
           return this.getAdapter(fallback.adapter).chatStream({
             ...restOptions,
             model: fallback.model,
+            providerOptions: fallback.providerOptions,
             stream: true,
           } as ChatCompletionOptions);
         },
@@ -690,6 +694,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
               const fallbackIterator = this.getAdapter(fallback.adapter).chatStream({
                 ...restOptions,
                 model: fallback.model,
+                providerOptions: fallback.providerOptions,
                 stream: true,
               } as ChatCompletionOptions);
 
@@ -879,6 +884,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
           return this.getAdapter(fallback.adapter).generateText({
             ...restOptions,
             model: fallback.model,
+            providerOptions: fallback.providerOptions,
           } as TextGenerationOptions);
         },
         "generateText"
@@ -917,6 +923,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
           return this.getAdapter(fallback.adapter).generateText({
             ...restOptions,
             model: fallback.model,
+            providerOptions: fallback.providerOptions,
           } as TextGenerationOptions);
         },
         "generateText (after primary failure)"
@@ -951,6 +958,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
           return this.getAdapter(fallback.adapter).generateTextStream({
             ...restOptions,
             model: fallback.model,
+            providerOptions: fallback.providerOptions,
             stream: true,
           } as TextGenerationOptions);
         },
@@ -1005,6 +1013,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
           const fallbackIterator = this.getAdapter(fallback.adapter).generateTextStream({
             ...restOptions,
             model: fallback.model,
+            providerOptions: fallback.providerOptions,
             stream: true,
           } as TextGenerationOptions);
 
@@ -1063,6 +1072,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
           return this.getAdapter(fallback.adapter).summarize({
             ...restOptions,
             model: fallback.model,
+            providerOptions: fallback.providerOptions,
           } as SummarizationOptions);
         },
         "summarize"
@@ -1101,6 +1111,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
           return this.getAdapter(fallback.adapter).summarize({
             ...restOptions,
             model: fallback.model,
+            providerOptions: fallback.providerOptions,
           } as SummarizationOptions);
         },
         "summarize (after primary failure)"
@@ -1135,6 +1146,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
           return this.getAdapter(fallback.adapter).createEmbeddings({
             ...restOptions,
             model: fallback.model,
+            providerOptions: fallback.providerOptions,
           } as EmbeddingOptions);
         },
         "embed"
@@ -1173,6 +1185,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
           return this.getAdapter(fallback.adapter).createEmbeddings({
             ...restOptions,
             model: fallback.model,
+            providerOptions: fallback.providerOptions,
           } as EmbeddingOptions);
         },
         "embed (after primary failure)"
@@ -1232,6 +1245,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
           return adapter.generateImage({
             ...restOptions,
             model: fallback.model,
+            providerOptions: fallback.providerOptions,
           } as ImageGenerationOptions);
         },
         "image"
@@ -1288,6 +1302,7 @@ export class AI<T extends AdapterMap = AdapterMap, TTools extends ToolRegistry =
           return fallbackAdapter.generateImage({
             ...restOptions,
             model: fallback.model,
+            providerOptions: fallback.providerOptions,
           } as ImageGenerationOptions);
         },
         "image (after primary failure)"

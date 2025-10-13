@@ -33,17 +33,12 @@ export class OpenAIAdapter extends BaseAdapter<
 
 ### 2. Type Inference
 
-The AI class automatically extracts the provider options type from each adapter and makes it available based on the adapter's internal `name`:
+The AI class automatically extracts the provider options type from each adapter:
 
 ```typescript
-// The AI class extracts:
-// - Adapter's internal name: "openai"
-// - Provider options type: OpenAIProviderOptions
-
-// Then creates a type like:
-type ProviderOptions = {
-  openai?: OpenAIProviderOptions;
-}
+// The AI class extracts the provider options type directly from the adapter
+// - For OpenAI adapter: OpenAIProviderOptions
+// - For Anthropic adapter: AnthropicProviderOptions
 ```
 
 ### 3. Usage
@@ -55,12 +50,10 @@ await ai.chat({
   adapter: "openai",  // TypeScript knows this is OpenAI
   model: "gpt-4o",
   messages: [{ role: "user", content: "Hello" }],
-  providerOptions: {
-    openai: {           // ✅ Autocomplete shows OpenAI-specific options
-      reasoningSummary: "detailed",
-      textVerbosity: "high",
-      // ... other OpenAI options
-    },
+  providerOptions: {    // ✅ Autocomplete shows OpenAI-specific options
+    reasoningSummary: "detailed",
+    textVerbosity: "high",
+    // ... other OpenAI options
   },
 });
 ```
@@ -132,11 +125,9 @@ await ai.chat({
   model: "gpt-4o",
   messages: [{ role: "user", content: "Explain TypeScript generics" }],
   providerOptions: {
-    openai: {
-      reasoningSummary: "detailed", // Get detailed reasoning
-      reasoningEffort: "high",      // Maximum reasoning effort
-      textVerbosity: "high",        // Verbose response
-    },
+    reasoningSummary: "detailed", // Get detailed reasoning
+    reasoningEffort: "high",      // Maximum reasoning effort
+    textVerbosity: "high",        // Verbose response
   },
 });
 ```
@@ -150,11 +141,9 @@ await ai.chat({
   messages: [{ role: "user", content: "Calculate something" }],
   tools: ["calculator"],
   providerOptions: {
-    openai: {
-      parallelToolCalls: false, // Execute tools sequentially
-      maxToolCalls: 5,          // Limit total tool calls
-      user: "user-123",         // For monitoring
-    },
+    parallelToolCalls: false, // Execute tools sequentially
+    maxToolCalls: 5,          // Limit total tool calls
+    user: "user-123",         // For monitoring
   },
 });
 ```
@@ -170,10 +159,8 @@ await ai.chat({
     { role: "user", content: "Question" },
   ],
   providerOptions: {
-    openai: {
-      promptCacheKey: "my-system-prompt-v1", // Manual cache control
-      serviceTier: "flex", // 50% cheaper, higher latency
-    },
+    promptCacheKey: "my-system-prompt-v1", // Manual cache control
+    serviceTier: "flex", // 50% cheaper, higher latency
   },
 });
 ```
@@ -186,12 +173,10 @@ await ai.chat({
   model: "gpt-4o",
   messages: [{ role: "user", content: "Is TypeScript good?" }],
   providerOptions: {
-    openai: {
-      logprobs: 5, // Get top 5 token probabilities
-      logitBias: {
-        9820: 10,   // Increase "yes" likelihood
-        2201: -10,  // Decrease "no" likelihood
-      },
+    logprobs: 5, // Get top 5 token probabilities
+    logitBias: {
+      9820: 10,   // Increase "yes" likelihood
+      2201: -10,  // Decrease "no" likelihood
     },
   },
 });
@@ -205,11 +190,9 @@ await ai.image({
   model: "dall-e-3",
   prompt: "A futuristic guitar",
   providerOptions: {
-    openai: {
-      quality: "hd",      // High quality
-      style: "vivid",     // Vivid colors
-      seed: 42,           // Reproducible
-    },
+    quality: "hd",      // High quality
+    style: "vivid",     // Vivid colors
+    seed: 42,           // Reproducible
   },
 });
 ```
@@ -249,13 +232,11 @@ await ai.chat({
   model: "claude-opus-4-20250514",
   messages: [{ role: "user", content: "Complex reasoning task" }],
   providerOptions: {
-    anthropic: {
-      thinking: {
-        type: "enabled",
-        budgetTokens: 12000, // Allocate tokens for reasoning
-      },
-      sendReasoning: true,
+    thinking: {
+      type: "enabled",
+      budgetTokens: 12000, // Allocate tokens for reasoning
     },
+    sendReasoning: true,
   },
 });
 ```
@@ -272,70 +253,117 @@ await ai.chat({
     { role: "user", content: `Analyze: ${longDocument}` },
   ],
   providerOptions: {
-    anthropic: {
-      cacheControl: {
-        type: "ephemeral",
-        ttl: "1h", // Cache for 1 hour instead of 5 minutes
+    cacheControl: {
+      type: "ephemeral",
+      ttl: "1h", // Cache for 1 hour instead of 5 minutes
+    },
+  },
+});
+```
+
+## Provider Options in Fallbacks
+
+You can specify provider-specific options for each fallback adapter. This allows you to configure different options for your primary adapter and each fallback:
+
+### Fallbacks with Provider Options
+
+```typescript
+await ai.chat({
+  adapter: "openai",
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "Explain quantum computing" }],
+  // Primary adapter options
+  providerOptions: {
+    reasoningSummary: "detailed",
+    textVerbosity: "high",
+  },
+  // Fallbacks with their own provider options
+  fallbacks: [
+    {
+      adapter: "anthropic",
+      model: "claude-3-5-sonnet-20241022",
+      providerOptions: {  // ← Type-safe Anthropic options
+        thinking: {
+          type: "enabled",
+          budgetTokens: 10000,
+        },
       },
     },
+    {
+      adapter: "openai",
+      model: "gpt-4o-mini",
+      providerOptions: {  // ← Type-safe OpenAI options
+        textVerbosity: "low",  // Use low verbosity for fallback
+        serviceTier: "flex",   // Use cheaper tier
+      },
+    },
+  ],
+});
+```
+
+### Global Fallbacks with Provider Options
+
+You can also configure provider options in global fallbacks:
+
+```typescript
+const ai = new AI({
+  adapters: {
+    openai: new OpenAIAdapter({ apiKey: "..." }),
+    anthropic: new AnthropicAdapter({ apiKey: "..." }),
+  },
+  // Global fallbacks applied to all operations
+  fallbacks: [
+    {
+      adapter: "openai",
+      model: "gpt-4o",
+      providerOptions: {
+        serviceTier: "flex",  // Cheaper tier for fallback
+        store: false,
+      },
+    },
+    {
+      adapter: "anthropic",
+      model: "claude-3-5-sonnet-20241022",
+      providerOptions: {
+        sendReasoning: false,
+      },
+    },
+  ],
+});
+
+// This will use fallbacks with their providerOptions if primary fails
+await ai.chat({
+  adapter: "openai",
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "Hello" }],
+  providerOptions: {
+    textVerbosity: "high",
   },
 });
 ```
 
 ## Important Notes
 
-### Provider Name vs. Adapter Name
-
-⚠️ The `providerOptions` key must match the adapter's internal `name` property, not your custom adapter name:
-
-```typescript
-const ai = new AI({
-  adapters: {
-    myOpenAI: new OpenAIAdapter({ apiKey: "..." }), // Custom name
-  },
-});
-
-// ✅ Correct - use adapter's internal name
-await ai.chat({
-  adapter: "myOpenAI",
-  model: "gpt-4",
-  providerOptions: {
-    openai: { ... }, // ✅ Use "openai" (adapter's internal name)
-  },
-});
-
-// ❌ Incorrect
-await ai.chat({
-  adapter: "myOpenAI",
-  model: "gpt-4",
-  providerOptions: {
-    myOpenAI: { ... }, // ❌ Won't work
-  },
-});
-```
-
-The adapter's internal name is defined in the adapter class:
-
-```typescript
-export class OpenAIAdapter extends BaseAdapter {
-  name = "openai"; // ← This is the key to use in providerOptions
-  // ...
-}
-```
-
 ### Type Safety
 
-TypeScript will catch invalid options:
+TypeScript provides full type safety for provider options based on the selected adapter:
 
 ```typescript
+// ✅ Correct - OpenAI options for OpenAI adapter
+await ai.chat({
+  adapter: "openai",
+  model: "gpt-4",
+  providerOptions: {
+    reasoningSummary: "detailed", // ✅ Valid OpenAI option
+  },
+});
+
 // ❌ TypeScript error - thinking doesn't exist on OpenAI
 await ai.chat({
   adapter: "openai",
   model: "gpt-4",
   providerOptions: {
-    openai: {
-      thinking: { ... }, // ERROR!
-    },
+    thinking: { ... }, // ERROR! This is an Anthropic option
   },
 });
 
@@ -344,9 +372,7 @@ await ai.chat({
   adapter: "anthropic",
   model: "claude-3-opus",
   providerOptions: {
-    anthropic: {
-      reasoningSummary: "detailed", // ERROR!
-    },
+    reasoningSummary: "detailed", // ERROR! This is an OpenAI option
   },
 });
 ```
@@ -396,7 +422,7 @@ export class MyCustomAdapter extends BaseAdapter<
 
   async chatCompletion(options: ChatCompletionOptions): Promise<ChatCompletionResult> {
     // TypeScript knows this is MyCustomProviderOptions based on the adapter instance
-    const providerOpts = options.providerOptions?.mycustom as MyCustomProviderOptions | undefined;
+    const providerOpts = options.providerOptions as MyCustomProviderOptions | undefined;
 
     // Use providerOpts to configure your API calls
     if (providerOpts?.customOption1) {
@@ -421,11 +447,9 @@ await ai.chat({
   adapter: "custom",
   model: "custom-model-1",
   messages: [...],
-  providerOptions: {
-    mycustom: {          // ✅ TypeScript infers MyCustomProviderOptions here
-      customOption1: "value",
-      customOption2: 42,
-    },
+  providerOptions: {       // ✅ TypeScript infers MyCustomProviderOptions here
+    customOption1: "value",
+    customOption2: 42,
   },
 });
 ```

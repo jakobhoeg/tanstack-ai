@@ -133,7 +133,7 @@ export class OpenAIAdapter extends BaseAdapter<
   async chatCompletion(
     options: ChatCompletionOptions
   ): Promise<ChatCompletionResult> {
-    const providerOpts = options.providerOptions?.openai as OpenAIProviderOptions | undefined;
+    const providerOpts = options.providerOptions as OpenAIProviderOptions | undefined;
 
     const requestParams: any = {
       model: options.model || "gpt-3.5-turbo",
@@ -304,7 +304,7 @@ export class OpenAIAdapter extends BaseAdapter<
   async *chatStream(
     options: ChatCompletionOptions
   ): AsyncIterable<import("@tanstack/ai").StreamChunk> {
-    const providerOpts = options.providerOptions?.openai as OpenAIProviderOptions | undefined;
+    const providerOpts = options.providerOptions as OpenAIProviderOptions | undefined;
 
     // Debug: Log incoming options
     if (process.env.DEBUG_TOOLS) {
@@ -633,8 +633,8 @@ export class OpenAIAdapter extends BaseAdapter<
       };
 
       // Add provider-specific options
-      if (options.providerOptions?.openai) {
-        Object.assign(requestParams, options.providerOptions.openai);
+      if (options.providerOptions) {
+        Object.assign(requestParams, options.providerOptions);
       }
 
       const response = await this.client.images.generate(requestParams, {
@@ -661,7 +661,7 @@ export class OpenAIAdapter extends BaseAdapter<
 
     // Extract provider metadata if available
     const providerMetadata: Record<string, any> = {};
-    if (options.providerOptions?.openai) {
+    if (options.providerOptions) {
       providerMetadata.openai = {
         images: allImages.map(() => ({})),
       };

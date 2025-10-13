@@ -78,7 +78,7 @@ export class AnthropicAdapter extends BaseAdapter<
   async chatCompletion(
     options: ChatCompletionOptions
   ): Promise<ChatCompletionResult> {
-    const providerOpts = options.providerOptions?.anthropic as AnthropicProviderOptions | undefined;
+    const providerOpts = options.providerOptions as AnthropicProviderOptions | undefined;
     const { systemMessage, messages } = this.formatMessages(options.messages);
 
     const requestParams: any = {
@@ -194,7 +194,7 @@ export class AnthropicAdapter extends BaseAdapter<
   async *chatStream(
     options: ChatCompletionOptions
   ): AsyncIterable<StreamChunk> {
-    const providerOpts = options.providerOptions?.anthropic as AnthropicProviderOptions | undefined;
+    const providerOpts = options.providerOptions as AnthropicProviderOptions | undefined;
     const { systemMessage, messages } = this.formatMessages(options.messages);
 
     const requestParams: any = {

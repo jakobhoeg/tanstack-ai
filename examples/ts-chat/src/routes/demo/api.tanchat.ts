@@ -97,8 +97,17 @@ export const Route = createFileRoute("/demo/api/tanchat")({
             {
               adapter: "ollama",
               model: "gpt-oss:20b",
+              providerOptions: {
 
+              }
             },
+            {
+              adapter: "openAi",
+              model: "gpt-4",
+              providerOptions: {
+                "instructions": "You are a helpful assistant that provides concise answers."
+              }
+            }
           ],
           as: "response",
           messages,
@@ -106,26 +115,24 @@ export const Route = createFileRoute("/demo/api/tanchat")({
           tools: ["getGuitars", "recommendGuitar"],
           toolChoice: "auto",
           maxIterations: 5,
-          // ✅ Provider-specific options (use adapter's internal name, e.g., "openai" not "openAi")
-          // Note: TypeScript will provide autocomplete based on the adapter type
+          // ✅ Provider-specific options typed based on the selected adapter
+          // Note: TypeScript provides autocomplete based on the adapter type
           providerOptions: {
-            openai: {
-              // Control response verbosity
-              textVerbosity: "low", // 'low' | 'medium' | 'high'
+            // Control response verbosity
+            textVerbosity: "high", // 'low' | 'medium' | 'high'
 
-              // Store generation for distillation
-              store: true,
-              metadata: {
-                session: "guitar-chat",
-                timestamp: new Date().toISOString(),
-              },
-
-              // User identifier for monitoring
-              user: "guitar-store-user",
-
-              // Parallel tool calling
-              parallelToolCalls: false, // Execute tools one at a time for this example
+            // Store generation for distillation
+            store: true,
+            metadata: {
+              session: "guitar-chat",
+              timestamp: new Date().toISOString(),
             },
+
+            // User identifier for monitoring
+            user: "guitar-store-user",
+
+            // Parallel tool calling
+            parallelToolCalls: false, // Execute tools one at a time for this example
           },
         });
       },
