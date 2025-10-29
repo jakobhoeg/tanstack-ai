@@ -7,16 +7,17 @@ A powerful, open-source AI SDK with a unified interface across multiple provider
 - **Multi-Provider Support** - OpenAI, Anthropic, Ollama, Google Gemini
 - **Unified API** - Same interface across all providers
 - **Standalone Functions** - Direct type-safe functions that infer from adapters
-- **AI Class with Multiple Adapters** - Manage multiple providers with fallbacks
-- **Structured Streaming** - JSON chunks with token deltas, tool calls, and usage stats
-- **Tool/Function Calling** - First-class support for AI function calling (OpenAI & Anthropic)
-- **React Hooks** - Simple `useChat` hook with v5 API (you control input state)
-- **TypeScript First** - Full type safety throughout
+- **AI Class** - Reusable instances with system prompts
+- **Structured Outputs** - Type-safe JSON responses with `responseFormat()` helper
+- **Structured Streaming** - JSON chunks with token deltas and metadata
+- **Tool/Function Calling** - First-class support with automatic execution
+- **React Hooks** - Simple `useChat` hook for building chat UIs
+- **TypeScript First** - Full type safety with inference from adapters
 - **Zero Lock-in** - Switch providers at runtime without code changes
 
 ## Quick Start
 
-### Standalone Functions (Recommended for Simple Use Cases)
+### Standalone Functions (Recommended)
 
 The easiest way to use the SDK - just pass an adapter and get full type inference:
 
@@ -27,10 +28,10 @@ import { openai } from "@tanstack/ai-openai";
 // Type-safe chat with automatic inference from adapter
 const result = await chat({
   adapter: openai(), // Automatically uses OPENAI_API_KEY from env
-  model: "gpt-4", // <-- Autocompletes with OpenAI models
+  model: "gpt-4o", // <-- Autocompletes with OpenAI models
   messages: [{ role: "user", content: "Hello!" }],
   providerOptions: { // <-- Typed as OpenAI-specific options!
-    reasoningEffort: "high",
+    store: true,
     parallelToolCalls: true,
   }
 });
@@ -45,8 +46,7 @@ console.log(result.content);
 - ✅ **Flexible** - Easy to switch adapters on a per-call basis
 
 Available standalone functions:
-- `chat()` - Chat completion
-- `chatStream()` - Streaming chat with AsyncIterable
+- `chat()` - Chat completion with streaming and structured outputs
 - `summarize()` - Text summarization
 - `embed()` - Generate embeddings
 - `image()` - Image generation
@@ -54,45 +54,69 @@ Available standalone functions:
 - `speak()` - Text-to-speech
 - `video()` - Video generation
 
-### AI Class (For Reusable Instances with Tools)
+### AI Class (For Reusable Instances)
 
-For applications that need to register tools or system prompts once and reuse them:
+For applications that need to configure system prompts once and reuse them:
 
 ```typescript
 import { ai } from "@tanstack/ai";
 import { openai } from "@tanstack/ai-openai";
 
-// Create an AI instance with tools and system prompts
-const aiInstance = ai(openai(), {
-  tools: {
-    getWeather: tool({
-      type: "function",
-      function: {
-        name: "getWeather",
-        description: "Get weather for a location",
-        parameters: { /* ... */ }
-      },
-      execute: async (args) => { /* ... */ }
-    })
-  },
+// Create an AI instance with system prompts
+const aiInstance = ai({
+  adapter: openai(),
   systemPrompts: ["You are a helpful assistant."]
 });
 
-// Use the instance - tools and system prompts are automatically included
+// Use the instance - system prompts are automatically prepended
 await aiInstance.chat({
-  model: "gpt-4",
-  messages: [{ role: "user", content: "What's the weather?" }],
-  tools: ["getWeather"], // Reference by name
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "Hello!" }],
 });
 ```
 
 **Why use the AI class?**
-- ✅ **Tools Registry** - Register tools once, use everywhere
 - ✅ **System Prompts** - Set default system prompts
 - ✅ **Reusable** - Configure once, use many times
-- ✅ **Adapter Switching** - Use `setAdapter()` to switch providers
+- ✅ **Type Safety** - Full type inference from adapter
 
-Choose the approach that fits your needs - both offer full type safety!
+### Structured Outputs
+
+Get type-safe JSON responses with the `responseFormat()` helper:
+
+```typescript
+import { chat, responseFormat } from "@tanstack/ai";
+import { openai } from "@tanstack/ai-openai";
+
+// Define your schema
+const guitarSchema = responseFormat({
+  name: "guitar_info",
+  schema: {
+    type: "object",
+    properties: {
+      id: { type: "string" },
+      name: { type: "string" },
+      price: { type: "number" },
+    },
+    required: ["id", "name"],
+    additionalProperties: false,
+  } as const, // Important for type inference!
+});
+
+// Get typed response
+const result = await chat({
+  adapter: openai(),
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "Recommend a guitar" }],
+  output: guitarSchema, // Only available in promise mode
+});
+
+// ✅ res.data is now fully typed!
+if (result.data) {
+  console.log(result.data.name); // string
+  console.log(result.data.price); // number
+}
+```
 
 ## Installation
 
@@ -132,6 +156,12 @@ interface AIAdapter {
 
   // Embeddings
   createEmbeddings(options: EmbeddingOptions): Promise<EmbeddingResult>;
+  
+  // Optional: Image, Audio, Video generation
+  generateImage?(options: ImageGenerationOptions): Promise<ImageGenerationResult>;
+  transcribeAudio?(options: AudioTranscriptionOptions): Promise<AudioTranscriptionResult>;
+  generateSpeech?(options: TextToSpeechOptions): Promise<TextToSpeechResult>;
+  generateVideo?(options: VideoGenerationOptions): Promise<VideoGenerationResult>;
 }
 ```
 
@@ -147,128 +177,82 @@ type StreamChunk =
   | ErrorStreamChunk; // Error information
 ```
 
-**3. Adapter Pattern**
+**3. Response Modes**
 
-The `AI` class wraps any adapter and provides a consistent API:
+The `chat()` function supports three response modes via the `as` parameter:
 
-```typescript
-const ai = new AI(adapter); // Initialize with adapter
-await ai.chat(options); // Standard chat
-ai.streamChat(options); // Structured streaming
-ai.setAdapter(newAdapter); // Switch providers
-```
+- `as: "promise"` (default) - Returns `Promise<ChatCompletionResult>`
+- `as: "stream"` - Returns `AsyncIterable<StreamChunk>`
+- `as: "response"` - Returns `Promise<Response>` (for HTTP streaming)
+
+**Note:** The `output` parameter for structured outputs is only available in promise mode.
 
 ## API Reference
 
-### Core Library
+### Standalone Functions
 
-#### AI Class
+#### `chat(options)`
 
-**Constructor**
-
-```typescript
-constructor(adapter: AIAdapter)
-```
-
-Create an AI instance with a specific provider adapter.
-
-#### Methods
-
-##### `chat(options): Promise<ChatCompletionResult>`
-
-Non-streaming chat completion.
+Complete a chat conversation with optional streaming and structured output.
 
 ```typescript
-const result = await ai.chat({
-  model: "gpt-3.5-turbo",
-  messages: [
-    { role: "system", content: "You are helpful" },
-    { role: "user", content: "Hello!" },
-  ],
+// Promise mode (default)
+const result = await chat({
+  adapter: openai(),
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "Hello!" }],
   temperature: 0.7,
   maxTokens: 1000,
+  providerOptions: { /* provider-specific options */ }
 });
 
-console.log(result.content);
-console.log(result.usage.totalTokens);
-```
+// Streaming mode
+const stream = await chat({
+  adapter: openai(),
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "Hello!" }],
+  as: "stream", // Returns AsyncIterable<StreamChunk>
+});
 
-##### `streamChat(options): AsyncIterable<StreamChunk>`
-
-Structured streaming with JSON chunks. **Automatically executes tools** if they have `execute` functions.
-
-```typescript
-for await (const chunk of ai.streamChat({
-  model: "gpt-3.5-turbo",
-  messages: [{ role: "user", content: "Hello" }],
-  tools: [...],            // Optional: Tools with execute functions
-  toolChoice: "auto",      // Optional: "auto" | "none" | { type, function }
-  maxIterations: 5,        // Optional: Max tool calling loops (default: 5)
-})) {
-  switch (chunk.type) {
-    case "content":
-      console.log("Delta:", chunk.delta);
-      console.log("Full:", chunk.content);
-      break;
-    case "tool_call":
-      console.log("Tool:", chunk.toolCall.function.name);
-      console.log("Args:", chunk.toolCall.function.arguments);
-      // Tool is executed automatically if execute function is defined!
-      break;
-    case "done":
-      console.log("Finish:", chunk.finishReason);
-      console.log("Usage:", chunk.usage);
-      break;
-    case "error":
-      console.error("Error:", chunk.error.message);
-      break;
+for await (const chunk of stream) {
+  if (chunk.type === "content") {
+    console.log(chunk.delta); // Incremental token
   }
 }
-```
 
-**Automatic Tool Execution:** If tools have `execute` functions, `streamChat` will:
-
-1. Detect tool calls from the AI
-2. Execute the tools automatically
-3. Add results to the conversation
-4. Continue streaming the final response
-5. Repeat up to `maxIterations` times
-
-##### `generateText(options): Promise<TextGenerationResult>`
-
-Generate text from a prompt.
-
-```typescript
-const result = await ai.generateText({
-  model: "gpt-3.5-turbo-instruct",
-  prompt: "Once upon a time",
-  maxTokens: 100,
+// Response mode (for HTTP endpoints)
+const response = await chat({
+  adapter: openai(),
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "Hello!" }],
+  as: "response", // Returns Response with SSE headers
 });
 
-console.log(result.text);
+return response; // Can be returned directly from API routes
 ```
 
-##### `summarize(options): Promise<SummarizationResult>`
+#### `summarize(options)`
 
-Summarize text.
+Summarize text using AI.
 
 ```typescript
-const result = await ai.summarize({
-  model: "gpt-3.5-turbo",
+const result = await summarize({
+  adapter: openai(),
+  model: "gpt-4o",
   text: "Long text to summarize...",
-  style: "bullet-points", // "bullet-points" | "paragraph" | "concise"
   maxLength: 200,
 });
 
 console.log(result.summary);
 ```
 
-##### `embed(options): Promise<EmbeddingResult>`
+#### `embed(options)`
 
-Generate embeddings.
+Generate embeddings for text.
 
 ```typescript
-const result = await ai.embed({
+const result = await embed({
+  adapter: openai(),
   model: "text-embedding-ada-002",
   input: ["Text 1", "Text 2"],
 });
@@ -276,357 +260,222 @@ const result = await ai.embed({
 console.log(result.embeddings); // number[][]
 ```
 
-##### `setAdapter(adapter): void`
+#### `image(options)`
 
-Switch providers at runtime.
+Generate images from text prompts.
 
 ```typescript
-ai.setAdapter(new AnthropicAdapter({ apiKey: "..." }));
+const result = await image({
+  adapter: openai(),
+  model: "dall-e-3",
+  prompt: "A beautiful sunset over mountains",
+  size: "1024x1024",
+});
+
+console.log(result.image?.base64);
 ```
 
-#### Helper Functions
+#### `audio(options)`
 
-##### `toStreamResponse(stream): Response`
-
-Convert a `StreamChunk` async iterable to an HTTP Response with proper SSE headers.
+Transcribe audio files.
 
 ```typescript
-import { toStreamResponse } from "@tanstack/ai";
+const result = await audio({
+  adapter: openai(),
+  model: "whisper-1",
+  file: audioFile, // File, Blob, or Buffer
+  language: "en",
+});
 
-const stream = ai.streamChat({ model, messages });
-return toStreamResponse(stream);
+console.log(result.text);
 ```
 
-Returns a `Response` with:
+#### `speak(options)`
 
-- `Content-Type: text/event-stream`
-- `Cache-Control: no-cache`
-- `Connection: keep-alive`
-- Automatic JSON encoding of chunks
-- Error handling
-- `[DONE]` completion marker
-
-##### `toReadableStream(stream): ReadableStream`
-
-Convert a `StreamChunk` async iterable to a `ReadableStream` for more control.
+Convert text to speech.
 
 ```typescript
-import { toReadableStream } from "@tanstack/ai";
+const result = await speak({
+  adapter: openai(),
+  model: "tts-1",
+  input: "Hello, world!",
+  voice: "alloy",
+});
 
-const stream = ai.streamChat({ model, messages });
-const readableStream = toReadableStream(stream);
+// result.audio is a Buffer or Blob
+```
 
-// Use in custom Response
-return new Response(readableStream, {
-  headers: { "Custom-Header": "value" },
+#### `video(options)`
+
+Generate videos from text prompts.
+
+```typescript
+const result = await video({
+  adapter: openai(),
+  model: "sora-1",
+  prompt: "A timelapse of a flower blooming",
+  duration: 5,
+});
+
+// result.video is a Buffer or Blob
+```
+
+### AI Class
+
+#### Constructor
+
+```typescript
+import { ai } from "@tanstack/ai";
+import { openai } from "@tanstack/ai-openai";
+
+const aiInstance = ai({
+  adapter: openai(),
+  systemPrompts: ["You are a helpful assistant."],
 });
 ```
 
-### Types
+#### Methods
 
-#### Message
+##### `chat(options)`
+
+Same as standalone `chat()` function, but system prompts are automatically prepended.
 
 ```typescript
-interface Message {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
-  name?: string;
-  toolCalls?: ToolCall[]; // For assistant messages with tool calls
-  toolCallId?: string; // For tool response messages
+await aiInstance.chat({
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "Hello!" }],
+  as: "promise", // or "stream" or "response"
+});
+```
+
+##### `summarize(options)`, `embed(options)`, etc.
+
+All standalone functions are available as methods on the AI instance.
+
+### Helper Functions
+
+#### `responseFormat(config)`
+
+Create a typed response format for structured outputs.
+
+```typescript
+import { responseFormat } from "@tanstack/ai";
+
+const schema = responseFormat({
+  name: "person",
+  schema: {
+    type: "object",
+    properties: {
+      name: { type: "string" },
+      age: { type: "number" },
+    },
+    required: ["name"],
+    additionalProperties: false,
+  } as const, // Important for type inference!
+});
+
+// Use with chat
+const result = await chat({
+  adapter: openai(),
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "Tell me about John Doe" }],
+  output: schema,
+});
+
+// result.data is typed based on the schema
+if (result.data) {
+  console.log(result.data.name); // string
+  console.log(result.data.age); // number
 }
 ```
 
-#### Tool
+#### `tool(config)`
+
+Create a tool for function calling with automatic execution.
 
 ```typescript
-interface Tool {
-  type: "function";
+import { tool } from "@tanstack/ai";
+
+const weatherTool = tool({
+  type: "function",
   function: {
-    name: string;
-    description: string;
-    parameters: Record<string, any>; // JSON Schema
-  };
-  execute?: (args: any) => Promise<string> | string; // Optional: auto-execute
-}
+    name: "getWeather",
+    description: "Get current weather for a location",
+    parameters: {
+      type: "object",
+      properties: {
+        location: { type: "string" },
+      },
+      required: ["location"],
+    },
+  },
+  execute: async (args) => {
+    const weather = await fetchWeather(args.location);
+    return JSON.stringify(weather);
+  },
+});
+
+// Use with chat
+const result = await chat({
+  adapter: openai(),
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "What's the weather in Paris?" }],
+  tools: [weatherTool],
+});
 ```
 
-**Note:** If `execute` is provided, `streamChat` will automatically:
-
-1. Detect when the AI calls this tool
-2. Execute the function with the parsed arguments
-3. Add the result back to the conversation
-4. Continue streaming the final response
-
-#### StreamChunk Variants
-
-**ContentStreamChunk**
-
-```typescript
-{
-  type: "content"
-  id: string
-  model: string
-  timestamp: number
-  delta: string           // New token(s)
-  content: string         // Full accumulated content
-  role?: "assistant"
-}
-```
-
-**ToolCallStreamChunk**
-
-```typescript
-{
-  type: "tool_call"
-  id: string
-  model: string
-  timestamp: number
-  toolCall: {
-    id: string
-    type: "function"
-    function: {
-      name: string
-      arguments: string   // Incremental JSON arguments
-    }
-  }
-  index: number
-}
-```
-
-**DoneStreamChunk**
-
-```typescript
-{
-  type: "done"
-  id: string
-  model: string
-  timestamp: number
-  finishReason: "stop" | "length" | "content_filter" | "tool_calls" | null
-  usage?: {
-    promptTokens: number
-    completionTokens: number
-    totalTokens: number
-  }
-}
-```
-
-**ErrorStreamChunk**
-
-```typescript
-{
-  type: "error"
-  id: string
-  model: string
-  timestamp: number
-  error: {
-    message: string
-    code?: string
-  }
-}
-```
-
+**Note:** When using streaming (`as: "stream"`), tools with `execute` functions are automatically called and their results are added to the conversation.
+ 
 ### React Hooks
 
 #### useChat
 
-The `useChat` hook provides complete chat functionality for React applications.
+Build chat interfaces with the `useChat` hook:
 
 ```typescript
 import { useChat } from "@tanstack/ai-react";
 
-const {
-  messages, // Current message list
-  sendMessage, // Send a message (you manage input state)
-  isLoading, // Is generating response
-  error, // Current error
-  append, // Add message programmatically
-  reload, // Reload last response
-  stop, // Stop generation
-  clear, // Clear all messages
-} = useChat({
-  api: "/api/chat",
-  onChunk: (chunk) => console.log(chunk),
-});
-
-// Simple usage
-await sendMessage("Hello!");
-```
-
-**Key Features:**
-
-- Maintains message state automatically
-- Sends messages to your API endpoint
-- Parses streaming `StreamChunk` responses
-- Updates messages in real-time
-- You control input state (v5 API style)
-
-See `packages/ai-react/README.md` for full documentation and backend examples.
-
-## Advanced Usage
-
-### Automatic Tool Calling
-
-Define tools with `execute` functions and `streamChat` handles everything automatically:
-
-```typescript
-import type { Tool } from "@tanstack/ai";
-
-const tools: Tool[] = [
-  {
-    type: "function",
-    function: {
-      name: "get_weather",
-      description: "Get current weather",
-      parameters: {
-        type: "object",
-        properties: {
-          location: { type: "string", description: "City name" },
-        },
-        required: ["location"],
-      },
-    },
-    execute: async ({ location }: { location: string }) => {
-      const weather = await fetchWeather(location);
-      return JSON.stringify(weather);
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "calculate",
-      description: "Perform calculations",
-      parameters: {
-        type: "object",
-        properties: {
-          expression: { type: "string" },
-        },
-        required: ["expression"],
-      },
-    },
-    execute: async ({ expression }: { expression: string }) => {
-      const result = eval(expression);
-      return JSON.stringify({ result });
-    },
-  },
-];
-
-// Tools are executed automatically!
-for await (const chunk of ai.streamChat({
-  model: "gpt-3.5-turbo",
-  messages: [
-    { role: "user", content: "What's the weather in Paris and what's 2+2?" },
-  ],
-  tools,
-  toolChoice: "auto",
-  maxIterations: 5, // Limit tool calling loops (default: 5)
-})) {
-  if (chunk.type === "content") {
-    process.stdout.write(chunk.delta);
-  }
-  // Tools are called and executed automatically - no manual handling needed!
-}
-```
-
-**Key Features:**
-
-- ✅ Define `execute` function with each tool
-- ✅ `streamChat` automatically detects tool calls
-- ✅ Executes tools automatically
-- ✅ Adds results back to conversation
-- ✅ Continues until final response (up to `maxIterations`)
-- ✅ You just handle the stream - no manual tool logic!
-
-### Backend Helper - toStreamResponse
-
-Convert streaming responses to HTTP responses with one line:
-
-```typescript
-import { AI, toStreamResponse } from "@tanstack/ai";
-import { OpenAIAdapter } from "@tanstack/ai-openai";
-
-const ai = new AI(new OpenAIAdapter({ apiKey: "..." }));
-
-// Express/Node.js
-app.post("/api/chat", async (req, res) => {
-  const { messages } = req.body;
-
-  const stream = ai.streamChat({
-    model: "gpt-3.5-turbo",
-    messages,
-    tools, // Optional
+function ChatComponent() {
+  const {
+    messages,      // Current message list
+    sendMessage,   // Send a message
+    isLoading,     // Is generating response
+    error,         // Current error
+    append,        // Add message programmatically
+    reload,        // Reload last response
+    stop,          // Stop generation
+    clear,         // Clear all messages
+  } = useChat({
+    api: "/api/chat",
+    onChunk: (chunk) => console.log(chunk),
   });
 
-  // One line to convert to HTTP response!
-  return toStreamResponse(stream);
-});
+  const [input, setInput] = useState("");
 
-// Next.js App Router
-export async function POST(req: Request) {
-  const { messages } = await req.json();
+  return (
+    <div>
+      {messages.map((message) => (
+        <div key={message.id}>
+          <strong>{message.role}:</strong> {message.content}
+        </div>
+      ))}
 
-  const stream = ai.streamChat({
-    model: "gpt-3.5-turbo",
-    messages,
-  });
-
-  return toStreamResponse(stream);
+      <input
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            sendMessage(input);
+            setInput("");
+          }
+        }}
+      />
+      <button onClick={() => { sendMessage(input); setInput(""); }}>
+        Send
+      </button>
+    </div>
+  );
 }
-
-// TanStack Start
-export const Route = createFileRoute("/api/chat")({
-  server: {
-    handlers: {
-      POST: async ({ request }) => {
-        const { messages } = await request.json();
-
-        return toStreamResponse(
-          ai.streamChat({ model: "gpt-3.5-turbo", messages })
-        );
-      },
-    },
-  },
-});
-```
-
-The helper handles:
-
-- ✅ Server-Sent Events formatting
-- ✅ Proper headers (Content-Type, Cache-Control, Connection)
-- ✅ JSON encoding of chunks
-- ✅ Error handling and error chunks
-- ✅ Completion marker `[DONE]`
-
-### Provider-Specific Configuration
-
-Each adapter accepts its own configuration:
-
-```typescript
-// OpenAI
-new OpenAIAdapter({
-  apiKey: string,
-  organization: string,
-  baseURL: string,
-  timeout: number,
-  maxRetries: number,
-});
-
-// Anthropic
-new AnthropicAdapter({
-  apiKey: string,
-  baseUrl: string,
-  timeout: number,
-  maxRetries: number,
-});
-
-// Ollama (local)
-new OllamaAdapter({
-  host: string, // Default: "http://localhost:11434"
-});
-
-// Gemini
-new GeminiAdapter({
-  apiKey: string,
-});
 ```
 
 ## Examples
@@ -634,26 +483,29 @@ new GeminiAdapter({
 ### Basic Chat
 
 ```typescript
-import { AI } from "@tanstack/ai";
-import { OpenAIAdapter } from "@tanstack/ai-openai";
+import { chat } from "@tanstack/ai";
+import { openai } from "@tanstack/ai-openai";
 
-const ai = new AI(new OpenAIAdapter({ apiKey: process.env.OPENAI_API_KEY }));
-
-const response = await ai.chat({
-  model: "gpt-3.5-turbo",
+const result = await chat({
+  adapter: openai(),
+  model: "gpt-4o",
   messages: [{ role: "user", content: "Explain quantum computing" }],
 });
 
-console.log(response.content);
+console.log(result.content);
 ```
 
 ### Streaming
 
 ```typescript
-for await (const chunk of ai.streamChat({
-  model: "gpt-3.5-turbo",
+const stream = await chat({
+  adapter: openai(),
+  model: "gpt-4o",
   messages: [{ role: "user", content: "Tell me a story" }],
-})) {
+  as: "stream",
+});
+
+for await (const chunk of stream) {
   if (chunk.type === "content") {
     process.stdout.write(chunk.delta);
   }
@@ -666,186 +518,90 @@ for await (const chunk of ai.streamChat({
 ### Switching Providers
 
 ```typescript
-// Start with OpenAI
-const ai = new AI(new OpenAIAdapter({ apiKey: "..." }));
+import { chat } from "@tanstack/ai";
+import { openai } from "@tanstack/ai-openai";
+import { anthropic } from "@tanstack/ai-anthropic";
+
+// Use OpenAI
+const result1 = await chat({
+  adapter: openai(),
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "Hello" }],
+});
 
 // Switch to Anthropic - same code works!
-ai.setAdapter(new AnthropicAdapter({ apiKey: "..." }));
-const response = await ai.chat({ model: "claude-3-sonnet-20240229", messages });
-
-// Switch to local Ollama
-ai.setAdapter(new OllamaAdapter());
-const response2 = await ai.chat({ model: "llama2", messages });
+const result2 = await chat({
+  adapter: anthropic(),
+  model: "claude-3-5-sonnet-20241022",
+  messages: [{ role: "user", content: "Hello" }],
+});
 ```
 
-### Text Generation
+### Tool Calling
 
 ```typescript
-const result = await ai.generateText({
-  model: "gpt-3.5-turbo-instruct",
-  prompt: "Write a haiku about TypeScript",
-  maxTokens: 50,
+import { chat, tool } from "@tanstack/ai";
+import { openai } from "@tanstack/ai-openai";
+
+const weatherTool = tool({
+  type: "function",
+  function: {
+    name: "getWeather",
+    description: "Get weather for a location",
+    parameters: {
+      type: "object",
+      properties: {
+        location: { type: "string" },
+      },
+      required: ["location"],
+    },
+  },
+  execute: async (args) => {
+    return JSON.stringify({ temp: 72, condition: "sunny" });
+  },
 });
 
-console.log(result.text);
-```
-
-### Summarization
-
-```typescript
-const longText = `...`; // Your long text
-
-const summary = await ai.summarize({
-  model: "gpt-3.5-turbo",
-  text: longText,
-  style: "bullet-points",
-  maxLength: 300,
+const stream = await chat({
+  adapter: openai(),
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "What's the weather in Paris?" }],
+  tools: [weatherTool],
+  as: "stream",
 });
 
-console.log(summary.summary);
-```
-
-### Embeddings
-
-```typescript
-const result = await ai.embed({
-  model: "text-embedding-ada-002",
-  input: "Semantic search query",
-});
-
-const vector = result.embeddings[0]; // number[]
-console.log(`Dimensions: ${vector.length}`);
-```
-
-### React Hook - useChat
-
-Build chat interfaces with the `useChat` hook:
-
-```typescript
-import { useChat } from "@tanstack/ai-react";
-
-function ChatComponent() {
-  const { messages, sendMessage, isLoading, error } = useChat({
-    api: "/api/chat",
-  });
-
-  const [input, setInput] = useState("");
-
-  return (
-    <div>
-      {/* Message list */}
-      {messages.map((message) => (
-        <div key={message.id}>
-          <strong>{message.role}:</strong> {message.content}
-        </div>
-      ))}
-
-      {/* Input - you control the state */}
-      <input
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            sendMessage(input);
-            setInput("");
-          }
-        }}
-        placeholder="Type a message..."
-        disabled={isLoading}
-      />
-      <button
-        onClick={() => {
-          sendMessage(input);
-          setInput("");
-        }}
-        disabled={isLoading || !input.trim()}
-      >
-        {isLoading ? "Sending..." : "Send"}
-      </button>
-
-      {error && <div>Error: {error.message}</div>}
-    </div>
-  );
+// Tool is automatically executed and results are added to conversation
+for await (const chunk of stream) {
+  if (chunk.type === "content") {
+    process.stdout.write(chunk.delta);
+  }
 }
 ```
 
-The hook handles:
+### HTTP Endpoint (TanStack Start)
 
-- Message state management
-- Sending messages to your API endpoint
-- Streaming response parsing
-- Loading and error states
-- Automatic message updates as chunks arrive
+```typescript
+import { createFileRoute } from "@tanstack/react-router";
+import { chat } from "@tanstack/ai";
+import { openai } from "@tanstack/ai-openai";
 
-**You control the input** - the hook only manages message state and API communication.
+export const Route = createFileRoute("/api/chat")({
+  server: {
+    handlers: {
+      POST: async ({ request }) => {
+        const { messages } = await request.json();
 
-## Examples
-
-### Standalone Scripts
-
-```bash
-# Install and build
-pnpm install && pnpm build
-
-# Run examples (set API keys first)
-cd examples
-
-# See basic usage of all providers
-pnpm quick-start
-
-# See streaming in action
-pnpm streaming-demo
-
-# See tool calling with both OpenAI & Anthropic (same code!)
-pnpm tool-calling
+        // Returns Response with SSE headers automatically
+        return await chat({
+          adapter: openai(),
+          model: "gpt-4o",
+          messages,
+          as: "response",
+        });
+      },
+    },
+  },
+});
 ```
-
-**Note:** Set `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` environment variables to see the examples work with real API calls.
-
-### Full TanStack Start Application
-
-A complete chat application with tool calling, built with TanStack Start and our React hooks:
-
-```bash
-cd examples/ts-chat
-
-# Set your API key
-echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
-
-# Install and run
-pnpm install
-pnpm dev
-```
-
-Open http://localhost:3000/demo/tanchat to see:
-
-- Real-time streaming chat with Claude
-- Tool calling for guitar recommendations
-- Beautiful UI with markdown formatting
-- All powered by `@tanstack/ai-react`
-
-### Interactive CLI
-
-We provide a full-featured CLI for testing and demos:
-
-```bash
-# Interactive chat
-pnpm cli chat --provider openai
-
-# Tool calling demo (OpenAI & Anthropic)
-pnpm cli tools --provider openai
-pnpm cli tools --provider anthropic
-
-# See JSON stream chunks
-pnpm cli chat --provider openai --debug
-
-# Other commands
-pnpm cli generate --provider anthropic --prompt "..."
-pnpm cli summarize --provider gemini --text "..." --style concise
-pnpm cli embed --provider openai --text "..."
-```
-
-See `examples/cli/README.md` for full CLI documentation.
 
 ## Package Structure
 
@@ -854,7 +610,10 @@ See `examples/cli/README.md` for full CLI documentation.
 ├── packages/
 │   ├── ai/                  # Core library
 │   │   ├── types.ts         # Type definitions
-│   │   ├── ai.ts            # Main AI class
+│   │   ├── ai.ts            # AI class
+│   │   ├── standalone-functions.ts  # Standalone functions
+│   │   ├── tool-utils.ts    # Tool helpers
+│   │   ├── schema-utils.ts  # Schema helpers
 │   │   ├── base-adapter.ts  # Adapter base class
 │   │   └── stream-utils.ts  # Streaming utilities
 │   ├── ai-openai/           # OpenAI adapter
@@ -865,23 +624,22 @@ See `examples/cli/README.md` for full CLI documentation.
 │       ├── use-chat.ts      # Chat hook
 │       └── types.ts         # React-specific types
 └── examples/
-    ├── cli/                 # Interactive CLI demo
-    ├── ts-chat/             # TanStack Start full app
-    ├── quick-start.js       # Basic examples
-    ├── streaming-demo.js    # Streaming demo
-    └── tool-calling-example.js # Tool calling demo
+    ├── cli/                 # CLI examples
+    └── ts-chat/             # Full TanStack Start app
 ```
 
 ## Provider Support Matrix
 
-| Feature         | OpenAI | Anthropic | Ollama | Gemini |
-| --------------- | ------ | --------- | ------ | ------ |
-| Chat            | ✅     | ✅        | ✅     | ✅     |
-| Streaming       | ✅     | ✅        | ✅     | ✅     |
-| Tool Calling    | ✅     | ✅        | ⏳     | ⏳     |
-| Text Generation | ✅     | ✅        | ✅     | ✅     |
-| Summarization   | ✅     | ✅        | ✅     | ✅     |
-| Embeddings      | ✅     | ❌        | ✅     | ✅     |
+| Feature            | OpenAI | Anthropic | Ollama | Gemini |
+| ------------------ | ------ | --------- | ------ | ------ |
+| Chat               | ✅     | ✅        | ✅     | ✅     |
+| Streaming          | ✅     | ✅        | ✅     | ✅     |
+| Tool Calling       | ✅     | ✅        | ⏳     | ⏳     |
+| Structured Outputs | ✅     | ✅        | ⏳     | ⏳     |
+| Embeddings         | ✅     | ❌        | ✅     | ✅     |
+| Image Generation   | ✅     | ❌        | ❌     | ❌     |
+| Audio              | ✅     | ❌        | ❌     | ❌     |
+| Video              | ⏳     | ❌        | ❌     | ❌     |
 
 ✅ = Fully supported | ⏳ = Planned | ❌ = Not supported by provider
 
